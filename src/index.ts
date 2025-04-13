@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
+import NodeWebcam from 'node-webcam';
 
 dotenv.config();
 
@@ -20,8 +21,39 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 
-// Configuração do stream MJPEG
-const MJPEG_URL = process.env.MJPEG_URL || 'http://192.168.18.40:4747/video';
+// Configuração da webcam
+const webcam = NodeWebcam.create({
+  width: 640,
+  height: 480,
+  quality: 100,
+  saveShots: false,
+  output: 'jpeg',
+  device: false, // Use o dispositivo padrão
+  callbackReturn: 'base64', // Retorna a imagem como base64
+});
+
+// return a snapshot of the usb-camera
+app.get('/usb-camera', (req, res) => {
+  webcam.capture('usb_camera', (err, data) => {
+    if (err) {
+      console.error('Erro ao capturar imagem da webcam USB:', err);
+      return res.status(500).json({ error: 'Não foi possível capturar a imagem da webcam USB' });
+    }
+
+    // Define o tipo de conteúdo como HTML
+    res.set('Content-Type', 'text/html');
+
+    // Envia um HTML contendo a tag <img> com a imagem em base64
+    res.send(`
+      <html>
+        <body>
+          <img src="${data}" width="100%" alt="Webcam USB" />
+        </body>
+      </html>
+    `);
+  });
+});
+
 
 // Rota para obter informações sobre a API
 app.get('/', (req, res) => {
@@ -36,6 +68,8 @@ app.get('/', (req, res) => {
 });
 
 // Rota para redirecionar ao stream original
+const MJPEG_URL = process.env.MJPEG_URL || 'http://192.168.18.40:4747/video';
+
 app.get('/stream', async (req, res) => {
   try {
     const response = await axios({
@@ -43,74 +77,18 @@ app.get('/stream', async (req, res) => {
       method: 'GET',
       responseType: 'stream'
     });
-    
+
     // Configura os cabeçalhos da resposta
     res.set('Content-Type', response.headers['content-type']);
     res.set('Cache-Control', 'no-cache');
     res.set('Connection', 'keep-alive');
-    
+
     // Encaminha o stream
     response.data.pipe(res);
   } catch (error) {
     console.error('Erro ao acessar o stream:', error);
     res.status(500).json({ error: 'Não foi possível conectar ao stream MJPEG' });
   }
-});
-
-// Rota para obter informações sobre o stream
-app.get('/api/stream-info', async (req, res) => {
-  try {
-    const response = await axios.head(MJPEG_URL);
-    res.json({
-      url: MJPEG_URL,
-      contentType: response.headers['content-type'],
-      status: 'connected',
-      headers: response.headers
-    });
-  } catch (error) {
-    console.error('Erro ao verificar informações do stream:', error);
-    res.status(500).json({ 
-      error: 'Não foi possível obter informações do stream',
-      url: MJPEG_URL,
-      status: 'disconnected'
-    });
-  }
-});
-
-// Rota para capturar um snapshot do stream
-app.get('/api/snapshot', async (req, res) => {
-  try {
-    // Para um snapshot simples, podemos fazer uma requisição curta e encerrar
-    const response = await axios({
-      url: MJPEG_URL,
-      method: 'GET',
-      responseType: 'arraybuffer',
-      timeout: 5000, // Timeout para evitar que a conexão fique aberta indefinidamente
-    });
-    
-    // Extrai um frame do stream MJPEG
-    const contentType = response.headers['content-type'];
-    const data = response.data;
-    
-    // Cabeçalhos para a imagem
-    res.set('Content-Type', 'image/jpeg');
-    res.set('Cache-Control', 'no-cache');
-    
-    // Envia o frame capturado
-    res.send(data);
-  } catch (error) {
-    console.error('Erro ao capturar snapshot:', error);
-    res.status(500).json({ error: 'Não foi possível capturar um snapshot do stream' });
-  }
-});
-
-// Configuração do Socket.io para streaming em tempo real
-io.on('connection', (socket) => {
-  console.log('Um cliente se conectou');
-  
-  socket.on('disconnect', () => {
-    console.log('Cliente desconectado');
-  });
 });
 
 // Inicia o servidor
