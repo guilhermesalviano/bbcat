@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src *; img-src * data:; script-src 'self';">
+  <title>Enhanced Camera Feed</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #222;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    #container {
+      position: relative;
+      max-width: 100%;
+      margin: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+    #camera-feed {
+      max-width: 100%;
+      display: block;
+    }
+    #status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    #controls {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    button {
+      background: #3498db;
+      border: none;
+      padding: 8px 16px;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    button:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+    }
+    #config-panel {
+      background: #333;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      display: none;
+    }
+    #config-panel.visible {
+      display: block;
+    }
+    #config-panel input {
+      margin-bottom: 10px;
+      padding: 5px;
+      width: 100%;
+    }
+    .loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+    }
+    .spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top: 4px solid white;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <h1>Camera Stream</h1>
+  
+  <div id="container">
+    <div id="loading" class="loading">
+      <div>
+        <div class="spinner"></div>
+        <p id="loading-text">Connecting to camera...</p>
+      </div>
+    </div>
+    <img id="camera-feed" alt="Camera Feed">
+    <div id="status"></div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-snapshot" disabled>Take Snapshot</button>
+    <button id="btn-refresh">Refresh Connection</button>
+    <button id="btn-settings">Settings</button>
+  </div>
+
+  <div id="config-panel">
+    <h3>Camera Settings</h3>
+    <div>
+      <label for="camera-ip">IP Address:</label>
+      <input type="text" id="camera-ip" placeholder="192.168.18.40">
+    </div>
+    <div>
+      <label for="camera-port">Port:</label>
+      <input type="text" id="camera-port" placeholder="4747">
+    </div>
+    <div>
+      <label for="camera-width">Width:</label>
+      <input type="number" id="camera-width" placeholder="640">
+    </div>
+    <div>
+      <label for="camera-height">Height:</label>
+      <input type="number" id="camera-height" placeholder="480">
+    </div>
+    <div>
+      <label for="refresh-interval">Refresh Interval (ms):</label>
+      <input type="number" id="refresh-interval" placeholder="100">
+    </div>
+    <button id="btn-save-config">Save Settings</button>
+  </div>
+
+  <script>
+    // Constants
+    const DEFAULT_CONFIG = {
+      ip: '192.168.18.40',  // Camera IP address
+      port: '4747',         // Camera port
+      width: 640,           // Default resolution width
+      height: 480,          // Default resolution height
+      refreshInterval: 100, // Milliseconds between refresh attempts
+      maxRetries: 5,        // Maximum number of retry attempts
+      retryDelay: 2000      // Delay between retries in milliseconds
+    };
+    
+    // State management
+    const state = {
+      config: { ...DEFAULT_CONFIG },
+      streamActive: false,
+      refreshTimer: null,
+      retryCount: 0,
+      configChanged: false
+    };
+
+    // DOM elements
+    const elements = {
+      cameraFeed: document.getElementById('camera-feed'),
+      status: document.getElementById('status'),
+      loading: document.getElementById('loading'),
+      loadingText: document.getElementById('loading-text'),
+      btnSnapshot: document.getElementById('btn-snapshot'),
+      btnRefresh: document.getElementById('btn-refresh'),
+      btnSettings: document.getElementById('btn-settings'),
+      configPanel: document.getElementById('config-panel'),
+      btnSaveConfig: document.getElementById('btn-save-config'),
+      cameraIp: document.getElementById('camera-ip'),
+      cameraPort: document.getElementById('camera-port'),
+      cameraWidth: document.getElementById('camera-width'),
+      cameraHeight: document.getElementById('camera-height'),
+      refreshInterval: document.getElementById('refresh-interval')
+    };
+
+    // Load saved configuration from localStorage if available
+    function loadSavedConfig() {
+      try {
+        const savedConfig = localStorage.getItem('cameraConfig');
+        if (savedConfig) {
+          state.config = JSON.parse(savedConfig);
+          updateConfigInputs();
+        }
+      } catch (e) {
+        console.error('Error loading saved config:', e);
+      }
+    }
+
+    // Save configuration to localStorage
+    function saveConfig() {
+      try {
+        localStorage.setItem('cameraConfig', JSON.stringify(state.config));
+      } catch (e) {
+        console.error('Error saving config:', e);
+      }
+    }
+
+    // Update UI based on config
+    function updateConfigInputs() {
+      elements.cameraIp.value = state.config.ip;
+      elements.cameraPort.value = state.config.port;
+      elements.cameraWidth.value = state.config.width;
+      elements.cameraHeight.value = state.config.height;
+      elements.refreshInterval.value = state.config.refreshInterval;
+    }
+
+    // Create the camera URL
+    function getCameraUrl() {
+      return `http://${state.config.ip}:${state.config.port}/video?${state.config.width}x${state.config.height}`;
+    }
+
+    // Create camera snapshot URL
+    function getSnapshotUrl() {
+      return `http://${state.config.ip}:${state.config.port}/cam/1/frame.jpg`;
+    }
+
+    // Update status message
+    function updateStatus(message, isError = false) {
+      elements.status.textContent = message;
+      elements.status.style.background = isError ? 'rgba(231, 76, 60, 0.7)' : 'rgba(39, 174, 96, 0.7)';
+    }
+
+    // Show loading state
+    function showLoading(message = 'Connecting to camera...') {
+      elements.loadingText.textContent = message;
+      elements.loading.classList.remove('hidden');
+      elements.btnSnapshot.disabled = true;
+    }
+
+    // Hide loading state
+    function hideLoading() {
+      elements.loading.classList.add('hidden');
+    }
+
+    // Load the camera feed with improved error handling
+    function loadCameraFeed() {
+      // Clear any existing timers
+      if (state.refreshTimer) {
+        clearTimeout(state.refreshTimer);
+        state.refreshTimer = null;
+      }
+      
+      // Reset camera feed if already active
+      if (state.streamActive) {
+        state.streamActive = false;
+        elements.cameraFeed.src = '';
+      }
+      
+      // Show loading indicator
+      showLoading();
+      updateStatus('Connecting...');
+      
+      // Create a new image element to test connection before updating the visible one
+      const testImage = new Image();
+      const timeoutId = setTimeout(() => {
+        testImage.src = ''; // Cancel the image load
+        handleConnectionError('Connection timeout');
+      }, 10000); // 10-second timeout
+      
+      // Set up test image handlers
+      testImage.onload = function() {
+        clearTimeout(timeoutId);
+        // Connection successful, update the visible image
+        elements.cameraFeed.src = getCameraUrl();
+        state.streamActive = true;
+        state.retryCount = 0;
+        updateStatus('Connected');
+        hideLoading();
+        elements.btnSnapshot.disabled = false;
+        
+        // Dispatch success event
+        const event = new CustomEvent('cameraConnected', {
+          detail: { url: elements.cameraFeed.src }
+        });
+        document.dispatchEvent(event);
+      };
+      
+      testImage.onerror = function() {
+        clearTimeout(timeoutId);
+        handleConnectionError('Failed to connect to camera');
+      };
+      
+      // Start connection attempt
+      testImage.src = getCameraUrl();
+    }
+
+    // Handle connection errors with exponential backoff
+    function handleConnectionError(message) {
+      state.streamActive = false;
+      state.retryCount++;
+      
+      if (state.retryCount <= state.config.maxRetries) {
+        const delay = state.retryCount * state.config.retryDelay;
+        updateStatus(`${message}. Retry ${state.retryCount}/${state.config.maxRetries} in ${delay/1000}s...`, true);
+        elements.loadingText.textContent = `Connection failed. Retrying in ${delay/1000} seconds...`;
+        
+        state.refreshTimer = setTimeout(loadCameraFeed, delay);
+      } else {
+        updateStatus('Connection failed. Please check settings.', true);
+        elements.loadingText.textContent = 'Unable to connect to camera.';
+        hideLoading();
+        
+        // Dispatch error event
+        const event = new CustomEvent('cameraError', {
+          detail: { message }
+        });
+        document.dispatchEvent(event);
+      }
+    }
+
+    // Update configuration and reload
+    function updateConfig(newConfig) {
+      const oldConfig = { ...state.config };
+      Object.assign(state.config, newConfig);
+      saveConfig();
+      
+      // Only reload if connection-related settings changed
+      if (oldConfig.ip !== state.config.ip || 
+          oldConfig.port !== state.config.port || 
+          oldConfig.width !== state.config.width || 
+          oldConfig.height !== state.config.height) {
+        state.retryCount = 0; // Reset retry counter for new config
+        loadCameraFeed();
+      }
+      
+      return state.config;
+    }
+
+    // Take a snapshot (returns a Promise that resolves to a data URL)
+    function takeSnapshot() {
+      return new Promise((resolve, reject) => {
+        if (!state.streamActive) {
+          reject(new Error('Camera stream not active'));
+          return;
+        }
+        
+        // Try to fetch a fresh frame directly
+        fetch(getSnapshotUrl())
+          .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch snapshot');
+            return response.blob();
+          })
+          .then(blob => {
+            const url = URL.createObjectURL(blob);
+            resolve(url);
+          })
+          .catch(e => {
+            console.warn('Direct snapshot failed, falling back to canvas method:', e);
+            
+            // Fallback to canvas method
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = elements.cameraFeed.naturalWidth || state.config.width;
+              canvas.height = elements.cameraFeed.naturalHeight || state.config.height;
+              
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(elements.cameraFeed, 0, 0);
+              
+              resolve(canvas.toDataURL('image/jpeg'));
+            } catch (err) {
+              reject(err);
+            }
+          });
+      });
+    }
+
+    // Get raw image data for processing
+    function getImageData() {
+      return new Promise((resolve, reject) => {
+        if (!state.streamActive) {
+          reject(new Error('Camera stream not active'));
+          return;
+        }
+        
+        try {
+          const canvas = document.createElement('canvas');
+          const cameraWidth = elements.cameraFeed.naturalWidth || state.config.width;
+          const cameraHeight = elements.cameraFeed.naturalHeight || state.config.height;
+          
+          canvas.width = cameraWidth;
+          canvas.height = cameraHeight;
+          
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(elements.cameraFeed, 0, 0);
+          
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          resolve(imageData);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+    
+    // Direct fetch of current frame as blob
+    function fetchCurrentFrame() {
+      return fetch(getSnapshotUrl())
+        .then(response => {
+          if (!response.ok) throw new Error('Failed to fetch frame');
+          return response.blob();
+        });
+    }
+    
+    // Handle UI events
+    function setupEventListeners() {
+      // Snapshot button
+      elements.btnSnapshot.addEventListener('click', () => {
+        if (state.streamActive) {
+          takeSnapshot()
+            .then(dataUrl => {
+              // Create a temporary link and trigger download
+              const link = document.createElement('a');
+              link.href = dataUrl;
+              link.download = `snapshot-${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              
+              // If it's an object URL, revoke it to free memory
+              if (dataUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(dataUrl);
+              }
+            })
+            .catch(err => {
+              console.error('Snapshot error:', err);
+              updateStatus('Failed to take snapshot', true);
+            });
+        }
+      });
+      
+      // Refresh button
+      elements.btnRefresh.addEventListener('click', () => {
+        state.retryCount = 0;
+        loadCameraFeed();
+      });
+      
+      // Settings button
+      elements.btnSettings.addEventListener('click', () => {
+        elements.configPanel.classList.toggle('visible');
+      });
+      
+      // Save config button
+      elements.btnSaveConfig.addEventListener('click', () => {
+        updateConfig({
+          ip: elements.cameraIp.value,
+          port: elements.cameraPort.value,
+          width: parseInt(elements.cameraWidth.value, 10),
+          height: parseInt(elements.cameraHeight.value, 10),
+          refreshInterval: parseInt(elements.refreshInterval.value, 10)
+        });
+        elements.configPanel.classList.remove('visible');
+      });
+      
+      // Handle camera feed errors (could happen after initial successful load)
+      elements.cameraFeed.addEventListener('error', () => {
+        if (state.streamActive) {
+          updateStatus('Connection lost', true);
+          state.streamActive = false;
+          elements.btnSnapshot.disabled = true;
+          
+          // Attempt to reconnect
+          if (!state.refreshTimer) {
+            state.refreshTimer = setTimeout(loadCameraFeed, state.config.refreshInterval);
+          }
+        }
+      });
+    }
+
+    // API for external scripts to interact with the camera
+    window.cameraAPI = {
+      getConfig: () => ({ ...state.config }),
+      updateConfig: updateConfig,
+      getStreamUrl: getCameraUrl,
+      getSnapshotUrl: getSnapshotUrl,
+      takeSnapshot: takeSnapshot,
+      getImageData: getImageData,
+      fetchCurrentFrame: fetchCurrentFrame,
+      isActive: () => state.streamActive,
+      reload: loadCameraFeed
+    };
+
+    // Initialize everything
+    function init() {
+      loadSavedConfig();
+      setupEventListeners();
+      loadCameraFeed();
+    }
+
+    // Start when DOM is fully loaded
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

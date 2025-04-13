@@ -227,10 +227,10 @@ def initialize_cameras():
     # For demo purposes, we'll add a few predefined cameras
     
     # USB webcam (typically 0 is the first connected camera)
-    cameras["main"] = Camera(0, "Main Camera")
+    cameras["main"] = Camera(2, "Main Camera")
     
     # IP camera example (replace with your actual IP camera URL)
-    # cameras["ip_cam"] = Camera("http://192.168.1.100:8080/video", "IP Camera")
+    cameras["ip_cam"] = Camera("http://192.168.18.40:4747/video?640x480", "IP Camera")
     
     # Start all cameras by default
     for camera in cameras.values():
