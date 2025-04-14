@@ -68,12 +68,12 @@ app.get('/', (req, res) => {
 });
 
 // Rota para redirecionar ao stream original
-const MJPEG_URL = process.env.MJPEG_URL || 'http://192.168.18.40:4747/video';
+const MJPEG_URL = process.env.MJPEG_URL;
 
 app.get('/stream', async (req, res) => {
   try {
     const response = await axios({
-      url: MJPEG_URL,
+      url: MJPEG_URL + '/video',
       method: 'GET',
       responseType: 'stream'
     });
@@ -82,6 +82,17 @@ app.get('/stream', async (req, res) => {
     res.set('Content-Type', response.headers['content-type']);
     res.set('Cache-Control', 'no-cache');
     res.set('Connection', 'keep-alive');
+
+    response.data.on('end', async () => {
+      if (response.data.includes('<a href="/override">')) {
+        try {
+          await axios.get(`${MJPEG_URL}/override`);
+          console.log('Override triggered successfully');
+        } catch (err) {
+          console.error('Error triggering override:', err);
+        }
+      }
+    });
 
     // Encaminha o stream
     response.data.pipe(res);
@@ -95,5 +106,5 @@ app.get('/stream', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
-  console.log(`Stream MJPEG configurado para: ${MJPEG_URL}`);
+  console.log(`Stream MJPEG configurado para: ${MJPEG_URL}/video`);
 });
