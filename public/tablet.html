@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tablet View</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; height: 100vh; }
+    .container { display: flex; flex-direction: column; height: 100%; }
+    .video-container { display: flex; flex-grow: 1; position: relative; }
+    #localVideo { width: 30%; height: 30%; position: absolute; bottom: 20px; right: 20px; }
+    #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
+    .controls { padding: 10px; background: #333; color: white; display: flex; justify-content: center; gap: 15px; }
+    button { padding: 10px 15px; cursor: pointer; }
+    .waiting { display: flex; justify-content: center; align-items: center; height: 100%; background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="video-container" id="videoContainer">
+      <div class="waiting" id="waitingScreen">
+        <h2>Tablet Ready - Waiting for connection...</h2>
+      </div>
+      <video id="remoteVideo" autoplay playsinline style="display: none;"></video>
+      <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+    <div class="controls">
+      <button id="audioBtn">Mute Audio</button>
+      <button id="videoBtn">Disable Video</button>
+      <button id="endCallBtn">End Call</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+  <script>
+    const socket = io('http://localhost:3000');
+    let localStream;
+    let peerConnection;
+    const tabletId = 'tablet1'; // Simulate tablet ID here
+    
+    // Setup media stream
+    async function setupMedia() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('localVideo').srcObject = localStream;
+      } catch (err) {
+        console.error('Error accessing media devices:', err);
+      }
+    }
+
+    socket.on('user-connected', async (userId) => {
+      document.getElementById('waitingScreen').style.display = 'none';
+      document.getElementById('remoteVideo').style.display = 'block';
+      await createPeerConnection();
+    });
+
+    async function createPeerConnection() {
+      peerConnection = new RTCPeerConnection();
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+      
+      peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', event.candidate, tabletId);
+        }
+      };
+
+      peerConnection.ontrack = event => {
+        document.getElementById('remoteVideo').srcObject = event.streams[0];
+      };
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit('offer', offer, tabletId);
+    }
+
+    // Button controls
+    document.getElementById('audioBtn').addEventListener('click', () => {
+      const audioTracks = localStream.getAudioTracks();
+      const isEnabled = audioTracks[0].enabled;
+      audioTracks.forEach(track => track.enabled = !isEnabled);
+      document.getElementById('audioBtn').textContent = isEnabled ? 'Unmute Audio' : 'Mute Audio';
+    });
+
+    document.getElementById('videoBtn').addEventListener('click', () => {
+      const videoTracks = localStream.getVideoTracks();
+      const isEnabled = videoTracks[0].enabled;
+      videoTracks.forEach(track => track.enabled = !isEnabled);
+      document.getElementById('videoBtn').textContent = isEnabled ? 'Enable Video' : 'Disable Video';
+    });
+
+    document.getElementById('endCallBtn').addEventListener('click', () => {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+        document.getElementById('waitingScreen').style.display = 'flex';
+        document.getElementById('remoteVideo').style.display = 'none';
+      }
+    });
+
+    setupMedia();
+  </script>
+</body>
+</html>
