@@ -1,4 +1,7 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
+import { exec } from 'child_process';
+import fs from 'fs';
+import os from 'os';
 import axios from 'axios';
 import { createServer } from 'http';
 import cors from 'cors';
@@ -7,6 +10,42 @@ import dotenv from 'dotenv';
 import NodeWebcam from 'node-webcam';
 
 dotenv.config();
+
+interface SystemInfo {
+  status: string;
+  uptime: {
+    server: number;
+    api: number;
+  };
+  memory: {
+    total: string;
+    free: string;
+    usage: string;
+  };
+  cpu: {
+    model: string;
+    cores: number;
+    load: number[];
+    temperature?: string;
+  };
+  hostname: string;
+  platform: string;
+  osRelease: string;
+  // networkInterfaces: ReturnType<typeof os.networkInterfaces>;
+  disk?: {
+    total: string;
+    used: string;
+    available: string;
+    usagePercent: string;
+  };
+}
+
+interface ApiResponse extends SystemInfo {
+  endpoints: {
+    [key: string]: string;
+  };
+}
+
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,6 +59,7 @@ const io = new Server(httpServer, {
 // Configuração do CORS
 app.use(cors());
 app.use(express.json());
+const startTime = new Date();
 
 // Configuração da webcam
 const webcam = NodeWebcam.create({
@@ -55,15 +95,75 @@ app.get('/usb-camera', (req, res) => {
 });
 
 
-// Rota para obter informações sobre a API
-app.get('/', (req, res) => {
-  res.json({
+app.get('/', (req: Request, res: Response) => {
+  // Coletar informações do sistema que já estão disponíveis via Node.js
+  const systemInfo: SystemInfo = {
     status: 'online',
-    endpoints: {
-      '/stream': 'Acessa o stream MJPEG diretamente',
-      '/api/stream-info': 'Retorna informações sobre o stream',
-      '/api/snapshot': 'Captura um frame do stream'
+    uptime: {
+      server: os.uptime(),
+      api: Math.floor((new Date().getTime() - startTime.getTime()) / 1000)
+    },
+    memory: {
+      total: Math.round(os.totalmem() / (1024 * 1024)) + ' MB',
+      free: Math.round(os.freemem() / (1024 * 1024)) + ' MB',
+      usage: Math.round((1 - os.freemem() / os.totalmem()) * 100) + '%'
+    },
+    cpu: {
+      model: os.cpus()[0].model,
+      cores: os.cpus().length,
+      load: os.loadavg()
+    },
+    hostname: os.hostname(),
+    platform: os.platform(),
+    osRelease: os.release(),
+    // networkInterfaces: os.networkInterfaces()
+  };
+
+  // Tentar obter temperatura da CPU (disponível em muitos sistemas Ubuntu)
+  fs.readFile('/sys/class/thermal/thermal_zone0/temp', 'utf8', (err, data) => {
+    if (!err) {
+      systemInfo.cpu.temperature = Math.round(parseInt(data) / 1000) + ' °C';
     }
+    
+    // Obter uso de disco
+    exec('df -h /', (err, stdout) => {
+      if (!err) {
+        const lines = stdout.trim().split('\n');
+        if (lines.length > 1) {
+          const diskInfo = lines[1].split(/\s+/);
+          systemInfo.disk = {
+            total: diskInfo[1],
+            used: diskInfo[2],
+            available: diskInfo[3],
+            usagePercent: diskInfo[4]
+          };
+        }
+        
+        // Finalmente, retornar todas as informações junto com os endpoints
+        const response: ApiResponse = {
+          ...systemInfo,
+          endpoints: {
+            '/stream': 'Acessa o stream MJPEG diretamente',
+            '/api/stream-info': 'Retorna informações sobre o stream',
+            '/api/snapshot': 'Captura um frame do stream'
+          }
+        };
+        
+        res.json(response);
+      } else {
+        // Se o comando df falhar, retornar o que já temos
+        const response: ApiResponse = {
+          ...systemInfo,
+          endpoints: {
+            '/stream': 'Acessa o stream MJPEG diretamente',
+            '/api/stream-info': 'Retorna informações sobre o stream',
+            '/api/snapshot': 'Captura um frame do stream'
+          }
+        };
+        
+        res.json(response);
+      }
+    });
   });
 });
 
