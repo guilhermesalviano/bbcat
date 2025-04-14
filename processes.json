@@ -1,0 +1,10 @@
+{
+    "apps": [
+        {
+            "name": "catcloser",
+            "script": "npm",
+            "args": "run dev",
+            "cwd": "."
+        }
+    ]
+}
