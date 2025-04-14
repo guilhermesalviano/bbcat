@@ -183,8 +183,13 @@ app.get('/stream', async (req, res) => {
     res.set('Cache-Control', 'no-cache');
     res.set('Connection', 'keep-alive');
 
+    let data = '';
+    response.data.on('data', (chunk: any) => {
+      data += chunk;
+    });
+
     response.data.on('end', async () => {
-      if (response.data.includes('<a href="/override">')) {
+      if (data.includes('<a href="/override">')) {
         try {
           await axios.get(`${MJPEG_URL}/override`);
           console.log('Override triggered successfully');
