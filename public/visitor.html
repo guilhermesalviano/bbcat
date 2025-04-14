@@ -8,7 +8,7 @@
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; height: 100vh; }
     .container { display: flex; flex-direction: column; height: 100%; }
     .video-container { display: flex; flex-grow: 1; position: relative; }
-    #localVideo { width: 30%; height: 30%; position: absolute; bottom: 20px; right: 20px; }
+    #localVideo { width: 30%; height: 30%; position: absolute; bottom: 20px; right: 20px; z-index: 10; }
     #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
     .controls { padding: 10px; background: #333; color: white; display: flex; justify-content: center; gap: 15px; }
     button { padding: 10px 15px; cursor: pointer; }
@@ -36,75 +36,134 @@
     const socket = io('http://localhost:3000');
     let localStream;
     let peerConnection;
-    const tabletId = 'tablet1';  // Tablet ID here
+    const tabletId = 'tablet1';  // Target tablet ID
     const visitorId = 'visitor1'; // Visitor ID
+    const roomId = `${tabletId}-visitor1`;
     
     async function init() {
       try {
+        // Get local media stream
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         document.getElementById('localVideo').srcObject = localStream;
         
-        socket.emit('join-room', `${tabletId}-${visitorId}`, visitorId);
+        // Join room as visitor
+        socket.emit('join-room', roomId, 'visitor');
         
+        // Setup event listeners
+        setupSocketListeners();
+        
+        // Initialize peer connection
         await setupPeerConnection();
-
+        
+        // Create and send offer
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
         socket.emit('offer', offer, tabletId);
+        console.log('Sent offer to tablet');
 
       } catch (err) {
         console.error('Error initializing:', err);
       }
     }
 
+    function setupSocketListeners() {
+      // Handle incoming answers
+      socket.on('answer', async (answer) => {
+        console.log('Received answer from tablet');
+        if (peerConnection) {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+      });
+      
+      // Handle incoming offers (in case tablet initiates the connection)
+      socket.on('offer', async (offer) => {
+        console.log('Received offer from tablet');
+        if (!peerConnection) {
+          await setupPeerConnection();
+        }
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('answer', answer, tabletId);
+      });
+      
+      // Handle ICE candidates
+      socket.on('ice-candidate', async (candidate) => {
+        console.log('Received ICE candidate');
+        try {
+          if (peerConnection) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
+      });
+      
+      // Handle end call
+      socket.on('end-call', () => {
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+        document.getElementById('connectingScreen').style.display = 'flex';
+        document.getElementById('remoteVideo').style.display = 'none';
+      });
+    }
+
     async function setupPeerConnection() {
+      // Close any existing connections
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      
+      // Create new connection
       peerConnection = new RTCPeerConnection();
+      
+      // Add local tracks
       localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
+      // Handle ICE candidates
       peerConnection.onicecandidate = event => {
         if (event.candidate) {
-          socket.emit('ice-candidate', event.candidate, `${tabletId}-${visitorId}`);
+          socket.emit('ice-candidate', event.candidate, tabletId);
         }
       };
 
+      // Handle remote tracks
       peerConnection.ontrack = event => {
         document.getElementById('connectingScreen').style.display = 'none';
         document.getElementById('remoteVideo').style.display = 'block';
         document.getElementById('remoteVideo').srcObject = event.streams[0];
       };
+      
+      // Handle connection state changes
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'disconnected' || 
+            peerConnection.connectionState === 'failed') {
+          document.getElementById('connectingScreen').style.display = 'flex';
+          document.getElementById('remoteVideo').style.display = 'none';
+        }
+      };
     }
 
-    socket.on('offer', async (offer) => {
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('answer', answer, `${tabletId}-${visitorId}`);
-      } catch (err) {
-        console.error('Error handling offer:', err);
-      }
-    });
-
-    socket.on('ice-candidate', async (candidate) => {
-      try {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error('Error adding ICE candidate:', err);
-      }
-    });
-
+    // Button controls
     document.getElementById('audioBtn').addEventListener('click', () => {
       const audioTracks = localStream.getAudioTracks();
-      const isEnabled = audioTracks[0].enabled;
-      audioTracks.forEach(track => track.enabled = !isEnabled);
-      document.getElementById('audioBtn').textContent = isEnabled ? 'Unmute Audio' : 'Mute Audio';
+      if (audioTracks.length > 0) {
+        const isEnabled = audioTracks[0].enabled;
+        audioTracks.forEach(track => track.enabled = !isEnabled);
+        document.getElementById('audioBtn').textContent = isEnabled ? 'Unmute Audio' : 'Mute Audio';
+      }
     });
 
     document.getElementById('videoBtn').addEventListener('click', () => {
       const videoTracks = localStream.getVideoTracks();
-      const isEnabled = videoTracks[0].enabled;
-      videoTracks.forEach(track => track.enabled = !isEnabled);
-      document.getElementById('videoBtn').textContent = isEnabled ? 'Enable Video' : 'Disable Video';
+      if (videoTracks.length > 0) {
+        const isEnabled = videoTracks[0].enabled;
+        videoTracks.forEach(track => track.enabled = !isEnabled);
+        document.getElementById('videoBtn').textContent = isEnabled ? 'Enable Video' : 'Disable Video';
+      }
     });
 
     document.getElementById('endCallBtn').addEventListener('click', () => {
@@ -112,9 +171,14 @@
         peerConnection.close();
         peerConnection = null;
       }
-      window.close();
+      document.getElementById('connectingScreen').style.display = 'flex';
+      document.getElementById('remoteVideo').style.display = 'none';
+      socket.emit('end-call', tabletId);
+      // Optionally close the window
+      // window.close();
     });
 
+    // Initialize
     init();
   </script>
 </body>

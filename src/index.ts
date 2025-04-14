@@ -28,7 +28,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('answer', (answer, roomId) => {
-    console.log("Answer:", answer);
     socket.to(roomId).emit('answer', answer, socket.id);
   });
 
