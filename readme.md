@@ -5,3 +5,4 @@ to'do:
 - [ ] setup do TeamViewer
 - [ ] tablet para ser o droid cam e renderizar minha camera tbm para os gatinhos.
 - [ ] serviço para salvar snapshots a cada hora e enviar para o wpp
+- [ ] webcam para fotos tbm - redundancia?
