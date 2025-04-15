@@ -1,10 +1,12 @@
 to'do:
 - [x] overwrite na controle da camera.
-- [ ] pagina com o status do servidor - acompanhar temperaturas
-- [ ] setup do projeto com pm2
-- [ ] setup da VPN com tailscale
-- [ ] setup do TeamViewer
-- [ ] tablet para ser o droid cam e renderizar minha camera tbm para os gatinhos.
+- [x] pagina com o status do servidor - acompanhar temperaturas
+- [x] setup do projeto com pm2
+- [x] setup da VPN com tailscale
+- [x] tablet para ser o droid cam e renderizar minha camera tbm para os gatinhos.
+- [ ] MacroDroid ou AutomateIt para abrir a guia no navegador
+- [ ] usb-camera ligada 100% no servidor
+- [ ] Enviar notificações no wpp
 - [ ] serviço para salvar snapshots a cada hora e enviar para o wpp
 - [ ] webcam para fotos tbm - redundancia?
 
