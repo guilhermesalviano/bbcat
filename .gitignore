@@ -4,3 +4,7 @@ node_modules
 usb_camera.*
 
 .env
+
+certificate.crt
+private.key
+

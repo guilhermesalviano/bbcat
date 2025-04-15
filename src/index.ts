@@ -1,13 +1,19 @@
 import express from 'express';
-import { createServer } from 'http';
+import { createServer } from 'https';
 import cors from 'cors';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import router from './routes';
 import { Server } from 'socket.io';
 dotenv.config();
 
+const options = {
+  key: fs.readFileSync('./private.key'),
+  cert: fs.readFileSync('./certificate.crt')
+};
+
 const app = express();
-const httpServer = createServer(app);
+const httpServer = createServer(options, app);
 const io = new Server(httpServer);
 
 // Configuração do CORS

@@ -25,3 +25,7 @@ pm2 status
 ```
 pm2 stop all
 ```
+
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout private.key -out certificate.crt
+
+For "Common Name", enter your server's IP address (e.g., 192.168.18.16)
