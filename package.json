@@ -1,7 +1,7 @@
 {
-  "name": "mjpeg-stream-api",
+  "name": "stream-api",
   "version": "1.0.0",
-  "description": "API local para streaming MJPEG",
+  "description": "API local para streaming de webcam em tempo real com Node.js, Express e Socket.io",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
