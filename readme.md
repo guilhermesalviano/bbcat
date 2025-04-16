@@ -4,6 +4,7 @@
 - [x] setup do projeto com pm2
 - [x] setup da VPN com tailscale
 - [x] tablet para ser o droid cam e renderizar minha camera tbm para os gatinhos.
+- [ ] create a very short ML algoritmo to analyse a photo each hour and send a notification in whatsapp. 
 - [ ] permissões não serem requisitadas dnv no tablet
 - [ ] site desconectar o tablet
 - [ ] macrodroid ou AutomateIt para abrir a guia no navegador
