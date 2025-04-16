@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tablet View</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; height: 100vh; }
+    .container { display: flex; flex-direction: column; height: 100%; }
+    .video-container { display: flex; flex-grow: 1; position: relative; }
+    #localVideo { width: 30%; height: 30%; position: absolute; bottom: 20px; right: 20px; z-index: 10; }
+    #remoteVideo { width: 100%; height: 100%; object-fit: cover; }
+    .controls { padding: 10px; background: #333; color: white; display: flex; justify-content: center; gap: 15px; }
+    button { padding: 10px 15px; cursor: pointer; }
+    .waiting { display: flex; justify-content: center; align-items: center; height: 100%; background: #f0f0f0; }
+    .permission-error { color: red; text-align: center; padding: 20px; }
+    .permission-button { padding: 15px 20px; background: #4285f4; color: white; border: none; border-radius: 5px; font-size: 16px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="video-container" id="videoContainer">
+      <div class="waiting" id="waitingScreen">
+        <div id="permissionPrompt">
+          <h2>Tablet Ready</h2>
+          <p>This app needs access to your camera and microphone.</p>
+          <button class="permission-button" id="requestPermission">Grant Access</button>
+          <div id="permissionError" class="permission-error"></div>
+        </div>
+        <h2 id="connectionWaiting" style="display: none;">Waiting for connection...</h2>
+      </div>
+      <video id="remoteVideo" autoplay playsinline style="display: none;"></video>
+      <video id="localVideo" autoplay playsinline muted style="display: none;"></video>
+    </div>
+    <div class="controls">
+      <button id="audioBtn" disabled>Mute Audio</button>
+      <button id="videoBtn" disabled>Disable Video</button>
+      <button id="endCallBtn" disabled>End Call</button>
+    </div>
+  </div>
+  <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+  <script>
+    // References to DOM elements
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const waitingScreen = document.getElementById('waitingScreen');
+    const connectionWaiting = document.getElementById('connectionWaiting');
+    const permissionPrompt = document.getElementById('permissionPrompt');
+    const permissionError = document.getElementById('permissionError');
+    const requestPermissionBtn = document.getElementById('requestPermission');
+    const audioBtn = document.getElementById('audioBtn');
+    const videoBtn = document.getElementById('videoBtn');
+    const endCallBtn = document.getElementById('endCallBtn');
+    
+    let socket;
+    let localStream;
+    let peerConnection;
+    const tabletId = 'tablet1'; // Tablet ID here
+    
+    // Initialize permission request button
+    requestPermissionBtn.addEventListener('click', requestMediaPermissions);
+    
+    // Clear specific permission errors in Firefox
+    function clearPermissionsCache() {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+          .then(tempStream => {
+            // Release tracks immediately
+            tempStream.getTracks().forEach(track => track.stop());
+          })
+          .catch(err => {
+            console.error("Error in permission check:", err);
+          });
+      }
+    }
+    
+    // Request permissions for camera and microphone
+    async function requestMediaPermissions() {
+      permissionError.textContent = '';
+      
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        });
+        
+        // Show local video
+        localVideo.srcObject = localStream;
+        localVideo.style.display = 'block';
+        
+        // Update UI
+        permissionPrompt.style.display = 'none';
+        connectionWaiting.style.display = 'block';
+        
+        // Enable buttons
+        audioBtn.disabled = false;
+        videoBtn.disabled = false;
+        endCallBtn.disabled = false;
+        
+        // Connect to socket server and setup
+        connectToServer();
+        
+      } catch (err) {
+        console.error('Error accessing media devices:', err);
+        
+        // Show specific error messages
+        if (err.name === 'NotAllowedError') {
+          permissionError.textContent = 'Camera or microphone permission denied. Please check your browser settings.';
+        } else if (err.name === 'NotFoundError') {
+          permissionError.textContent = 'Camera or microphone not found. Please check your device.';
+        } else {
+          permissionError.textContent = `Error accessing camera/microphone: ${err.message}`;
+        }
+      }
+    }
+    
+    function connectToServer() {
+      // Use wss for secure connections, ws for development
+      socket = io('https://192.168.18.16:3000', {
+        reconnectionAttempts: 5,
+        timeout: 10000
+      });
+      
+      socket.on('connect', () => {
+        console.log('Connected to server');
+        // Join room as tablet
+        socket.emit('join-room', `${tabletId}`, 'tablet');
+      });
+      
+      socket.on('connect_error', (err) => {
+        console.error('Connection error:', err);
+        permissionPrompt.style.display = 'block';
+        connectionWaiting.style.display = 'none';
+        permissionError.textContent = 'Failed to connect to the server. Please try again.';
+      });
+      
+      // Setup event listeners for WebRTC
+      setupSocketListeners();
+    }
+    
+    function setupSocketListeners() {
+      // Listen for visitor connection
+      socket.on('user-connected', async (userId) => {
+        console.log('Visitor connected:', userId);
+        waitingScreen.style.display = 'none';
+        remoteVideo.style.display = 'block';
+        endCallBtn.disabled = false;
+        await setupPeerConnection();
+      });
+      
+      // Handle incoming offers
+      socket.on('offer', async (offer, senderId) => {
+        console.log('Received offer from visitor');
+        if (!peerConnection) {
+          await setupPeerConnection();
+        }
+        
+        try {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+          socket.emit('answer', answer, senderId);
+        } catch (err) {
+          console.error('Error handling offer:', err);
+        }
+      });
+      
+      // Handle incoming answers
+      socket.on('answer', async (answer) => {
+        console.log('Received answer from visitor');
+        try {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (err) {
+          console.error('Error handling answer:', err);
+        }
+      });
+      
+      // Handle ICE candidates
+      socket.on('ice-candidate', async (candidate) => {
+        console.log('Received ICE candidate');
+        try {
+          if (peerConnection && peerConnection.remoteDescription) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          }
+        } catch (err) {
+          console.error('Error adding ICE candidate:', err);
+        }
+      });
+      
+      // Handle disconnection
+      socket.on('user-disconnected', () => {
+        console.log('Visitor disconnected');
+        resetUI();
+      });
+    }
+    
+    async function setupPeerConnection() {
+      // Close any existing connections
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      
+      // Firefox-friendly configuration
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ],
+        sdpSemantics: 'unified-plan'
+      };
+      
+      // Create new connection
+      peerConnection = new RTCPeerConnection(config);
+      
+      // Add local tracks to connection
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+        });
+      }
+      
+      // Handle ICE candidates
+      peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+          socket.emit('ice-candidate', event.candidate, `${tabletId}-visitor1`);
+        }
+      };
+      
+      // Handle connection state changes
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE Connection state:', peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'disconnected' || 
+            peerConnection.iceConnectionState === 'failed') {
+          resetUI();
+        }
+      };
+      
+      // Handle remote tracks
+      peerConnection.ontrack = event => {
+        if (event.streams && event.streams[0]) {
+          remoteVideo.srcObject = event.streams[0];
+          waitingScreen.style.display = 'none';
+          remoteVideo.style.display = 'block';
+        }
+      };
+    }
+    
+    function resetUI() {
+      waitingScreen.style.display = 'flex';
+      permissionPrompt.style.display = 'none';
+      connectionWaiting.style.display = 'block';
+      remoteVideo.style.display = 'none';
+    }
+    
+    // Button controls
+    audioBtn.addEventListener('click', () => {
+      if (!localStream) return;
+      
+      const audioTracks = localStream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const isEnabled = audioTracks[0].enabled;
+        audioTracks.forEach(track => track.enabled = !isEnabled);
+        audioBtn.textContent = isEnabled ? 'Unmute Audio' : 'Mute Audio';
+      }
+    });
+    
+    videoBtn.addEventListener('click', () => {
+      if (!localStream) return;
+      
+      const videoTracks = localStream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        const isEnabled = videoTracks[0].enabled;
+        videoTracks.forEach(track => track.enabled = !isEnabled);
+        videoBtn.textContent = isEnabled ? 'Enable Video' : 'Disable Video';
+      }
+    });
+    
+    endCallBtn.addEventListener('click', () => {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      
+      resetUI();
+      socket.emit('end-call', `${tabletId}-visitor1`);
+    });
+    
+    // Check for any existing permissions before showing UI
+    clearPermissionsCache();
+  </script>
+</body>
+</html>
