@@ -16,14 +16,14 @@ if (!MJPEG_URL) {
 }
 
 const webcam = NodeWebcam.create({
-    width: 1280,
-    height: 720,
+    width: 2560,
+    height: 1440,
     quality: 100,
     saveShots: false,
     output: 'jpeg',
     device: false,
     callbackReturn: 'base64',
-    verbose: true
+    verbose: true,
 });
 
 router.get(['/camera', '/living-room'], (req, res) => {
