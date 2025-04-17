@@ -16,8 +16,8 @@ if (!MJPEG_URL) {
 }
 
 const webcam = NodeWebcam.create({
-    width: 640,
-    height: 480,
+    width: 1280,
+    height: 720,
     quality: 100,
     saveShots: false,
     output: 'jpeg',
@@ -70,7 +70,7 @@ router.get(['/camera', '/living-room'], (req, res) => {
 
                     /* Main container styling */
                     .container {
-                        padding: 30px;
+                        padding: 8px;
                         display: flex;
                         flex-direction: column;
                         justify-content: center;
@@ -89,7 +89,7 @@ router.get(['/camera', '/living-room'], (req, res) => {
 
                     /* Image styling for responsiveness */
                     img {
-                        width: 80%;
+                        width: 90%;
                         max-width: 100%; /* Ensures image is responsive */
                         border-radius: 8px;
                     }
