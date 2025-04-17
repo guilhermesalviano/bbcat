@@ -25,15 +25,15 @@ const webcam = NodeWebcam.create({
     callbackReturn: 'base64', // Retorna a imagem como base64
 });
 
-router.get('/usb-camera', (req, res) => {
-    webcam.capture('usb_camera', (err, data) => {
+router.get('/camera', (req, res) => {
+    const date = new Date().toISOString().replace(/T/, '-').replace(/\:.+/, '');
+
+    webcam.capture('usb_camera-' + date, (err, data) => {
         if (err) {
             console.error('Erro ao capturar imagem da webcam USB:', err);
-            return res
-                .status(500)
-                .json({
-                    error: 'Não foi possível capturar a imagem da webcam USB',
-                });
+            return res.status(500).json({
+                error: 'Não foi possível capturar a imagem da webcam USB',
+            });
         }
 
         // Define o tipo de conteúdo como HTML
@@ -41,12 +41,12 @@ router.get('/usb-camera', (req, res) => {
 
         // Envia um HTML contendo a tag <img> com a imagem em base64
         res.send(`
-      <html>
-        <body>
-          <img src="${data}" width="100%" alt="Webcam USB" />
-        </body>
-      </html>
-    `);
+        <html>
+            <body>
+            <img src="${data}" width="100%" alt="Webcam USB" />
+            </body>
+        </html>
+        `);
     });
 });
 
