@@ -29,7 +29,7 @@ const webcam = NodeWebcam.create({
 router.get(['/camera', '/living-room'], (req, res) => {
     const date = new Date().toISOString().replace(/T/, '-').replace(/\:.+/, '');
 
-    webcam.capture('usb_camera-' + date, (err, data) => {
+    webcam.capture('./temp/usb_camera-' + date, (err, data) => {
         if (err) {
             console.error('Erro ao capturar imagem da webcam USB:', err);
             return res.status(500).json({
