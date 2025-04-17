@@ -21,8 +21,9 @@ const webcam = NodeWebcam.create({
     quality: 100,
     saveShots: false,
     output: 'jpeg',
-    device: false, // Use o dispositivo padrão
-    callbackReturn: 'base64', // Retorna a imagem como base64
+    device: false,
+    callbackReturn: 'base64',
+    verbose: true
 });
 
 router.get('/camera', (req, res) => {
@@ -41,11 +42,76 @@ router.get('/camera', (req, res) => {
 
         // Envia um HTML contendo a tag <img> com a imagem em base64
         res.send(`
-        <html>
+        <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Webcam Image</title>
+                <style>
+                    /* Resetting margin and padding for better control */
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+
+                    /* Full screen height and background color */
+                    body {
+                        font-family: Arial, sans-serif;
+                        height: 100vh;
+                        width: 100%;
+                        background-color: rgb(48, 48, 48);
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        text-align: center;
+                    }
+
+                    /* Main container styling */
+                    .container {
+                        padding: 30px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        background-color: rgba(255, 255, 255, 0.1); /* semi-transparent background */
+                        border-radius: 8px; /* rounded corners */
+                        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.3); /* subtle shadow */
+                    }
+
+                    /* Header text styling */
+                    h1 {
+                        color: #fefefe;
+                        margin-bottom: 20px;
+                        font-size: 2rem;
+                    }
+
+                    /* Image styling for responsiveness */
+                    img {
+                        width: 80%;
+                        max-width: 100%; /* Ensures image is responsive */
+                        border-radius: 8px;
+                    }
+
+                    /* Responsive adjustments for smaller screens */
+                    @media (max-width: 768px) {
+                        h1 {
+                            font-size: 1.5rem;
+                        }
+                        img {
+                            width: 90%;
+                        }
+                    }
+                </style>
+            </head>
             <body>
-            <img src="${data}" width="100%" alt="Webcam USB" />
+                <div class="container">
+                    <h1>Webcam Image</h1>
+                    <img src="${data}" alt="Webcam USB" />
+                </div>
             </body>
-        </html>
+            </html>
         `);
     });
 });
