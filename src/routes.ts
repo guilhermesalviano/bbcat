@@ -26,7 +26,7 @@ const webcam = NodeWebcam.create({
     verbose: true
 });
 
-router.get('/camera', (req, res) => {
+router.get(['/camera', '/living-room'], (req, res) => {
     const date = new Date().toISOString().replace(/T/, '-').replace(/\:.+/, '');
 
     webcam.capture('usb_camera-' + date, (err, data) => {
@@ -47,7 +47,7 @@ router.get('/camera', (req, res) => {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Webcam Image</title>
+                <title>Living Room</title>
                 <style>
                     /* Resetting margin and padding for better control */
                     * {
@@ -107,7 +107,7 @@ router.get('/camera', (req, res) => {
             </head>
             <body>
                 <div class="container">
-                    <h1>Webcam Image</h1>
+                    <h1>Living room in ${date}</h1>
                     <img src="${data}" alt="Webcam USB" />
                 </div>
             </body>
@@ -196,7 +196,7 @@ router.get('/', (req: Request, res: Response) => {
     );
 });
 
-router.get('/stream', async (req, res) => {
+router.get(['/stream', '/food'], async (req, res) => {
     try {
         const response = await axios({
             url: MJPEG_URL + '/video',
